@@ -236,3 +236,38 @@ def outer():
 
     used = nesting_mod._find_subscript_zero_refs(outer_fn, {"x"})
     assert used == {"x"}
+
+
+def test_python_security_honors_config_excludes_with_relative_file_paths(
+    monkeypatch, tmp_path
+) -> None:
+    """Relative file lists must still produce excludes bandit can match.
+
+    Bandit is invoked on the absolute scan root, so exclude dirs derived from a
+    relative root (``.``) never matched and excluded code leaked into results.
+    """
+    import pytest
+
+    pytest.importorskip("bandit")
+    from desloppify.base.discovery.source import set_exclusions
+
+    (tmp_path / "src").mkdir()
+    # Positive control: an in-scope risky file must still be reported, so the
+    # test cannot pass just because bandit found nothing at all.
+    (tmp_path / "src" / "app.py").write_text("exec('1')\n")
+    (tmp_path / "vendored").mkdir()
+    (tmp_path / "vendored" / "risky.py").write_text("exec('1')\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(py_security_mod, "_load_bandit_skip_tests", lambda: None)
+    set_exclusions(["vendored"])
+    try:
+        result = py_security_mod.detect_python_security(
+            ["src/app.py", "vendored/risky.py"], zone_map=None
+        )
+    finally:
+        set_exclusions([])
+
+    reported = [str(entry.get("file", "")) for entry in result.entries]
+    assert result.files_scanned >= 1
+    assert any("app.py" in name for name in reported), reported
+    assert all("vendored" not in name for name in reported), reported

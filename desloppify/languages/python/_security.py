@@ -48,6 +48,9 @@ def detect_python_security(files, zone_map) -> LangSecurityResult:
     scan_root = scan_root_from_files(files)
     if scan_root is None:
         return LangSecurityResult(entries=[], files_scanned=0)
+    # Bandit matches --exclude against the absolute target path it is given,
+    # so relative exclude dirs (e.g. when files are relative) would never match.
+    scan_root = scan_root.resolve()
 
     exclude_dirs = collect_exclude_dirs(scan_root)
     skip_tests = _load_bandit_skip_tests()
